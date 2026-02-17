@@ -76,7 +76,7 @@ import re  # Add this at the top with other imports
 # --- TESTING LOCALLY ---
 # Use your local IP so your phone can redirect back to your website
 # If your website is also running on your PC, put that address here
-FRONTEND_URL = "https://www.irraesign.store/" # Change 5500 to your website's port (like Live Server)
+FRONTEND_URL = "https://www.irra.store/irraesign.html" # Change 5500 to your website's port (like Live Server)
 
 @app.route('/api/get-profile')
 def get_profile():
