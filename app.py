@@ -22,7 +22,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 # 🔴 THIS MUST MATCH YOUR LIVE WEBSITE URL EXACTLY
 # This is where Safari will redirect after the profile is installed.
-FRONTEND_URL = "https://www.irra.store/irraesign.html"
+FRONTEND_URL = "https://www.irraesign.store/"
 
 # 🔴 Static QR Settings
 STATIC_QR_URL = "https://i.pinimg.com/736x/b1/6a/e2/b16ae2b0fecbfe77a77c06494e589c5d.jpg"
