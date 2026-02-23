@@ -170,20 +170,40 @@ def confirm_manual():
     try:
         data = request.json
         oid = data.get('order_id')
-        if orders_col:
-            order = orders_col.find_one({"order_id": oid})
-            if order:
-                orders_col.update_one({"order_id": oid}, {"$set": {"status": "pending_review"}})
-                msg = (f"⚠️ <b>MANUAL PAYMENT CLAIMED</b>\n"
-                       f"🆔 Order: <code>{oid}</code>\n"
-                       f"📧 Email: {order.get('email')}\n"
-                       f"📱 UDID: <code>{order.get('udid')}</code>\n\n"
-                       f"🏦 Action Required: Approve in Admin!")
-                send_telegram_alert(msg)
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        
+        if not oid:
+            return jsonify({"success": False, "error": "Order ID missing"}), 400
 
+        if orders_col:
+            # 1. Find the order details in the database
+            order = orders_col.find_one({"order_id": oid})
+            
+            if order:
+                # 2. Update status in MongoDB
+                orders_col.update_one({"order_id": oid}, {"$set": {"status": "pending_review"}})
+
+                # 3. PREPARE THE EXACT TELEGRAM ALERT
+                msg = (
+                    f"✅ <b>NEW PAYMENT SUCCESS</b>\n"
+                    f"🆔 Order: <code>{order['order_id']}</code>\n"
+                    f"📧 Email: {order['email']}\n"
+                    f"📱 UDID: <code>{order['udid']}</code>\n"
+                    f"💰 Amount: $10.00 (Paid)\n"
+                    f"⏰ Time: {get_khmer_time()}"
+                )
+                
+                # 4. Send the alert
+                send_telegram_alert(msg)
+                
+                return jsonify({"success": True})
+            else:
+                return jsonify({"success": False, "error": "Order not found"}), 404
+                
+        return jsonify({"success": False, "error": "Database connection error"}), 500
+        
+    except Exception as e:
+        print(f"Manual Confirm Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 # ==========================================
 # 5. ADMIN PANEL BACKEND ROUTES
 # ==========================================
