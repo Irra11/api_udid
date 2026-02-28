@@ -70,49 +70,6 @@ def send_telegram_alert(message):
 def status():
     return jsonify({"status": "Backend Live (Production Mode)", "time": get_khmer_time()})
 
-# ==========================================
-# 3. AUTOMATIC UDID EXTRACTION (The Magic)
-# ==========================================
-
-@app.route('/api/get-profile', methods=['GET'])
-def get_profile():
-    """Generates and serves the .mobileconfig profile to the iPhone"""
-    # Ensure URL uses HTTPS for Render production
-    root_url = request.url_root.replace("http://", "https://")
-    enroll_url = f"{root_url}api/enroll"
-    
-    profile_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>PayloadContent</key>
-    <dict>
-        <key>URL</key>
-        <string>{enroll_url}</string>
-        <key>DeviceAttributes</key>
-        <array>
-            <string>UDID</string>
-            <string>PRODUCT</string>
-            <string>VERSION</string>
-        </array>
-    </dict>
-    <key>PayloadOrganization</key>
-    <string>Irra Esign Store</string>
-    <key>PayloadDisplayName</key>
-    <string>Get Device UDID</string>
-    <key>PayloadVersion</key>
-    <integer>1</integer>
-    <key>PayloadUUID</key>
-    <string>{uuid.uuid4()}</string>
-    <key>PayloadIdentifier</key>
-    <string>com.irraesign.udid</string>
-    <key>PayloadType</key>
-    <string>Profile Service</string>
-</dict>
-</plist>"""
-    
-    # Return with specific Apple MIME type so the phone triggers the Install prompt
-    return profile_xml, 200, {'Content-Type': 'application/x-apple-aspen-config'}
 
 @app.route('/api/enroll', methods=['POST'])
 def enroll():
