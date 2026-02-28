@@ -1,284 +1,198 @@
 import os
 import uuid
-import requests
-import resend
-import io
 import base64
-import time
 import traceback
-import re
-from flask import Flask, request, jsonify, redirect
+from datetime import datetime
+from io import BytesIO
+
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
-from datetime import datetime, timedelta, timezone
+import qrcode
 
+from bakong_khqr import KHQR
+
+# ======================
+# CONFIG
+# ======================
 app = Flask(__name__)
-# Enable CORS so your website (irra.store) can talk to Render
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app)
 
-# ==========================================
-# 1. CONFIGURATION
-# ==========================================
+# 🔴 CHANGE THESE
+BAKONG_ID = "yourname@aclb"   # Example: irra@aclb or irra@aba
+PRICE_USD = 15
+USD_TO_KHR = 4000  # Conversion rate (15$ ≈ 60000 KHR)
+PRICE_KHR = PRICE_USD * USD_TO_KHR
 
-# 🔴 THIS MUST MATCH YOUR LIVE WEBSITE URL EXACTLY
-# This is where Safari will redirect after the profile is installed.
-FRONTEND_URL = "https://www.irraesign.store/"
+# Telegram (optional)
+TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"
 
-# 🔴 Static QR Settings
-STATIC_QR_URL = "https://i.pinimg.com/736x/b1/6a/e2/b16ae2b0fecbfe77a77c06494e589c5d.jpg"
+# MongoDB (optional but recommended)
+MONGO_URI = "mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority"
 
-# 🔴 Telegram Settings
-TELE_TOKEN = "8470641780:AAHd2LRndd0dA2lBBkSEzxqh5FtgYqHpNwY"
-TELE_CHAT_ID = "5007619095"
-
-# 🔴 Resend Email Settings
-RESEND_API_KEY = "re_M8VwiPH6_CYEbbqfg6nG737BEqR9nNWD5"
-resend.api_key = RESEND_API_KEY
-SHOP_LOGO_URL = "https://i.pinimg.com/736x/da/83/78/da8378a6ddba21823631bd644bee4266.jpg"
-
-# 🔴 Admin Password
-ADMIN_PASSWORD = "Irra@4455$" 
-
-# 🔴 Database
-MONGO_URI = "mongodb+srv://Esign:Kboy%40%404455@cluster0.4havjl6.mongodb.net/?appName=Cluster0"
-
+# ======================
+# DATABASE CONNECTION
+# ======================
+orders_col = None
 try:
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    db = client['irra_esign_db']
-    orders_col = db['orders']
+    client = MongoClient(MONGO_URI)
+    db = client["khqr_db"]
+    orders_col = db["orders"]
     print("✅ MongoDB Connected")
 except Exception as e:
-    print(f"❌ MongoDB Failed: {e}")
-    orders_col = None
+    print("⚠️ MongoDB not connected:", e)
 
-# ==========================================
-# 2. HELPER FUNCTIONS
-# ==========================================
+# ======================
+# UTIL FUNCTIONS
+# ======================
 def get_khmer_time():
-    khmer_tz = timezone(timedelta(hours=7))
-    return datetime.now(khmer_tz).strftime("%d-%b-%Y %I:%M %p")
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 def send_telegram_alert(message):
     try:
-        url = f"https://api.telegram.org/bot{TELE_TOKEN}/sendMessage"
-        payload = {"chat_id": TELE_CHAT_ID, "text": message, "parse_mode": "HTML"}
-        requests.post(url, json=payload)
+        import requests
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        requests.post(url, json=data, timeout=10)
     except Exception as e:
-        print(f"Telegram Error: {e}")
+        print("Telegram Error:", e)
 
-@app.route('/')
-def status():
-    return jsonify({"status": "Backend Live (Production Mode)", "time": get_khmer_time()})
+def generate_qr_base64(qr_string):
+    qr = qrcode.make(qr_string)
+    buffer = BytesIO()
+    qr.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
 
+# ======================
+# HOME
+# ======================
+@app.route("/")
+def home():
+    return jsonify({
+        "status": "API RUNNING",
+        "price_usd": PRICE_USD,
+        "price_khr": PRICE_KHR
+    })
 
-@app.route('/api/enroll', methods=['POST'])
-def enroll():
-    """Receives data from iPhone Settings, extracts UDID, and redirects back to website"""
-    try:
-        # iPhone sends signed binary XML (PKCS7). We decode and use Regex to find the UDID.
-        raw_data = request.get_data().decode('latin-1')
-        udid_search = re.search(r'<key>UDID</key>\s*<string>(.*?)</string>', raw_data)
-        
-        if udid_search:
-            udid = udid_search.group(1)
-            print(f"🎯 Target UDID Found: {udid}")
-            # Redirect Safari back to our website with the UDID inside the URL (?udid=...)
-            return "", 301, {'Location': f"{FRONTEND_URL}?udid={udid}"}
-        
-        return "UDID Extraction Failed", 400
-    except Exception as e:
-        print(f"Enroll Error: {e}")
-        return str(e), 500
-
-# ==========================================
-# 4. PAYMENT & ORDER PROCESSING
-# ==========================================
-
-@app.route('/api/create-payment', methods=['POST'])
+# ======================
+# CREATE PAYMENT (KHQR $15)
+# ======================
+@app.route("/api/create-payment", methods=["POST"])
 def create_payment():
     try:
         data = request.json
-        udid, email = data.get('udid'), data.get('email')
-        order_id = str(uuid.uuid4())[:8].upper()
-        
-        # Load the static payment QR image from URL
-        qr_response = requests.get(STATIC_QR_URL)
-        qr_response.raise_for_status()
-        img_base64 = base64.b64encode(qr_response.content).decode('utf-8')
+        email = data.get("email", "no-email")
+        product = data.get("product", "Service")
 
+        order_id = str(uuid.uuid4())[:8].upper()
+
+        # 🔥 Generate Dynamic KHQR
+        khqr = KHQR(
+            bakong_id=BAKONG_ID,
+            merchant_name="Irra Store",
+            city="Phnom Penh"
+        )
+
+        khqr_data = khqr.generate(amount=PRICE_KHR)
+        qr_string = khqr_data["qr_string"]
+        md5 = khqr_data["md5"]
+
+        # Generate QR Image locally (PythonAnywhere safe)
+        qr_image_base64 = generate_qr_base64(qr_string)
+
+        # Save order to DB
         if orders_col is not None:
             orders_col.insert_one({
                 "order_id": order_id,
                 "email": email,
-                "udid": udid, 
-                "price": "10.00",
-                "plan": "Standard",
-                "status": "pending_manual_check",
-                "timestamp": get_khmer_time()
+                "product": product,
+                "amount_usd": PRICE_USD,
+                "amount_khr": PRICE_KHR,
+                "md5": md5,
+                "status": "unpaid",
+                "created_at": get_khmer_time()
             })
 
-        return jsonify({"success": True, "order_id": order_id, "qr_image": img_base64})
+        return jsonify({
+            "success": True,
+            "order_id": order_id,
+            "amount_usd": PRICE_USD,
+            "amount_khr": PRICE_KHR,
+            "md5": md5,
+            "qr_image": f"data:image/png;base64,{qr_image_base64}"
+        })
+
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
-@app.route('/api/confirm-manual', methods=['POST'])
-def confirm_manual():
+# ======================
+# CHECK PAYMENT (AUTO)
+# ======================
+@app.route("/api/check-payment/<md5>", methods=["GET"])
+def check_payment(md5):
     try:
-        data = request.json
-        oid = data.get('order_id')
-        if orders_col:
-            order = orders_col.find_one({"order_id": oid})
-            if order:
-                orders_col.update_one({"order_id": oid}, {"$set": {"status": "pending_review"}})
-                msg = (f"⚠️ <b>MANUAL PAYMENT CLAIMED</b>\n"
-                       f"🆔 Order: <code>{oid}</code>\n"
-                       f"📧 Email: {order.get('email')}\n"
-                       f"📱 UDID: <code>{order.get('udid')}</code>\n\n"
-                       f"🏦 Action Required: Approve in Admin!")
-                send_telegram_alert(msg)
-        return jsonify({"success": True})
+        khqr = KHQR(bakong_id=BAKONG_ID)
+
+        # Check payment from Bakong
+        paid_list = khqr.check_bulk_payments([md5])
+
+        if md5 in paid_list:
+            if orders_col is not None:
+                order = orders_col.find_one({"md5": md5})
+
+                if order and order["status"] != "paid":
+                    orders_col.update_one(
+                        {"md5": md5},
+                        {"$set": {"status": "paid"}}
+                    )
+
+                    # Telegram Notification
+                    msg = (
+                        f"💰 <b>PAYMENT RECEIVED</b>\n"
+                        f"🆔 Order: <code>{order['order_id']}</code>\n"
+                        f"📧 Email: {order['email']}\n"
+                        f"💵 Amount: ${PRICE_USD}\n"
+                        f"🇰🇭 {PRICE_KHR} KHR"
+                    )
+                    send_telegram_alert(msg)
+
+            return jsonify({"status": "PAID"})
+
+        return jsonify({"status": "UNPAID"})
+
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        print("Check Payment Error:", e)
+        return jsonify({
+            "status": "ERROR",
+            "message": str(e)
+        }), 500
 
-# ==========================================
-# 5. ADMIN PANEL BACKEND ROUTES
-# ==========================================
+# ======================
+# GET ORDER (OPTIONAL)
+# ======================
+@app.route("/api/order/<order_id>", methods=["GET"])
+def get_order(order_id):
+    if orders_col is None:
+        return jsonify({"error": "DB not connected"}), 500
 
-@app.route('/api/admin/login', methods=['POST'])
-def admin_login():
-    data = request.json
-    if data and data.get('password') == ADMIN_PASSWORD:
-        return jsonify({"success": True}), 200
-    return jsonify({"success": False}), 401
+    order = orders_col.find_one({"order_id": order_id})
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
 
-@app.route('/api/orders', methods=['GET'])
-def get_orders():
-    if request.headers.get('x-admin-password') != ADMIN_PASSWORD:
-        return jsonify({"error": "Unauthorized"}), 401
-    if orders_col is None: return jsonify([])
-    all_orders = list(orders_col.find().sort("_id", -1))
-    for o in all_orders: o['_id'] = str(o['_id'])
-    return jsonify(all_orders)
+    order["_id"] = str(order["_id"])
+    return jsonify(order)
 
-@app.route('/api/update-order', methods=['POST'])
-def update_order():
-    if request.headers.get('x-admin-password') != ADMIN_PASSWORD:
-        return jsonify({"error": "Unauthorized"}), 401
-    data = request.json
-    orders_col.update_one({"order_id": data.get('order_id')}, 
-                          {"$set": {"email": data.get('email'), "download_link": data.get('link')}})
-    return jsonify({"success": True})
-
-@app.route('/api/delete-order/<order_id>', methods=['DELETE'])
-def delete_order(order_id):
-    if request.headers.get('x-admin-password') != ADMIN_PASSWORD:
-        return jsonify({"error": "Unauthorized"}), 401
-    orders_col.delete_one({"order_id": order_id})
-    return jsonify({"success": True})
-
-
-
-@app.route('/api/send-email', methods=['POST'])
-def api_send_email():
-    # 1. Auth Check
-    if request.headers.get('x-admin-password') != ADMIN_PASSWORD:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    data = request.json
-    oid = data.get('order_id')
-    download_link = data.get('link')
-    is_failed = data.get('type') == 'failed'
-
-    order = orders_col.find_one({"order_id": oid})
-    if not order: return jsonify({"success": False, "msg": "Order not found"}), 404
-
-    # 2. Prepare Data
-    price = order.get('price', '10.00')
-    plan = order.get('plan', 'Standard Package')
-    udid = order.get('udid', 'N/A')
-    user_name = order.get('email').split('@')[0]
-
-    if is_failed:
-        theme_color = "#e74c3c"
-        subject_text = "Order Rejected - Payment Verification Failed"
-        status_title = "Order Failed"
-        status_desc = "Payment Issue Detected"
-        main_message = "We regret to inform you that your order could not be processed."
-        button_text = "Contact Support"
-        action_url = "https://t.me/irra_11"
-    else:
-        theme_color = "#27ae60"
-        subject_text = "Order Completed - Device Registration Enabled"
-        status_title = "Order Completed"
-        status_desc = "Device Registration Enabled"
-        main_message = "We are pleased to inform you that your order has been successfully completed."
-        button_text = "Download Certificate"
-        action_url = download_link
-
-    # 3. HTML Template
-    html_body = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <link href="https://fonts.googleapis.com/css2?family=Hanuman:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
-    </head>
-    <body style="margin: 0; padding: 0; background-color: #f4f7f6; font-family: 'Inter', sans-serif; color: #333;">
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="padding: 30px 0;">
-            <tr>
-                <td align="center">
-                    <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border-spacing: 0;">
-                        <tr>
-                            <td align="center" style="background-color: {theme_color}; padding: 40px 20px;">
-                                <div style="display: inline-block; padding: 5px; background: rgba(255,255,255,0.2); border-radius: 50%; margin-bottom: 15px;">
-                                    <img src="{SHOP_LOGO_URL}" width="70" height="70" style="display: block; border-radius: 50%; border: 3px solid #ffffff;">
-                                </div>
-                                <h2 style="margin: 0; color: #ffffff; font-size: 20px;">{status_title}</h2>
-                                <p style="margin: 5px 0 0 0; color: #ffffff; opacity: 0.9; font-size: 13px;">{status_desc}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 40px 30px;">
-                                <h3 style="margin: 0 0 15px 0; color: #2c3e50;">Dear {user_name},</h3>
-                                <p style="font-size: 15px; line-height: 1.6; color: #555;">{main_message}</p>
-                                <table width="100%" style="margin-top: 25px; border-collapse: collapse; font-size: 14px;">
-                                    <tr><td colspan="2" style="padding: 10px 0; border-bottom: 2px solid #f4f7f6; font-weight: bold; color: {theme_color}; text-transform: uppercase;">Transaction Details</td></tr>
-                                    <tr><td style="padding: 12px 0; color: #777;">Payment Amount:</td><td align="right" style="font-weight: 600;">${price}</td></tr>
-                                    <tr><td style="padding: 12px 0; color: #777;">Method:</td><td align="right" style="font-weight: 600;">BAKONG KHQR</td></tr>
-                                    <tr><td colspan="2" style="padding: 25px 0 10px 0; border-bottom: 2px solid #f4f7f6; font-weight: bold; color: {theme_color}; text-transform: uppercase;">Order Information</td></tr>
-                                    <tr><td style="padding: 12px 0; color: #777;">Order ID:</td><td align="right" style="font-weight: 600;">#{oid}</td></tr>
-                                    <tr><td style="padding: 12px 0; color: #777;">Package:</td><td align="right" style="font-weight: 600;">{plan}</td></tr>
-                                    <tr><td style="padding: 12px 0; color: #777;">Device UDID:</td><td align="right" style="font-size: 11px; font-family: monospace; background: #f8f9fa; padding: 4px 8px; border-radius: 4px;">{udid}</td></tr>
-                                </table>
-                                <div style="text-align: center; margin-top: 40px;">
-                                    <a href="{action_url}" style="background-color: {theme_color}; color: #ffffff; padding: 18px 35px; text-decoration: none; border-radius: 12px; font-weight: bold; font-size: 16px;">{button_text}</a>
-                                </div>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-    </body>
-    </html>
-    """
-
-    try:
-        resend.Emails.send({
-            "from": "Irra Store <admin@irra.store>",
-            "to": [order['email']],
-            "subject": subject_text,
-            "html": html_body
-        })
-        
-        new_status = "failed" if is_failed else "completed"
-        orders_col.update_one({"order_id": oid}, {"$set": {"download_link": download_link, "status": new_status}})
-        send_telegram_alert(f"✅ <b>EMAIL SENT</b> to {order['email']}")
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "msg": str(e)}), 500
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
-    import re # Add this at the top of your file with other imports
+# ======================
+# RUN (FOR LOCAL ONLY)
+# ======================
+if __name__ == "__main__":
+    app.run(debug=True)
