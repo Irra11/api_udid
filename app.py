@@ -243,14 +243,13 @@ def api_send_email():
     </html>
     """
 
-    try:
-            r = resend.Emails.send({
-                "from": "Irra Store <admin@irra.store>",
-                "to": [recipient],
-                "subject": email_subject,
-                "html": html_body
-            })
-            
+   try:
+        resend.Emails.send({
+            "from": "Irra Store <admin@irra.store>",
+            "to": [order['email']],
+            "subject": subject_text,
+            "html": html_body
+        })
         new_status = "failed" if is_failed else "completed"
         orders_col.update_one({"order_id": oid}, {"$set": {"download_link": download_link, "status": new_status}})
         send_telegram_alert(f"✅ <b>EMAIL SENT</b> to {order['email']}")
