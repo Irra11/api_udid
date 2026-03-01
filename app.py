@@ -25,7 +25,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 FRONTEND_URL = "https://www.irraesign.store/"
 
 # 🔴 Static QR Settings
-STATIC_QR_URL = "https://i.pinimg.com/736x/b1/6a/e2/b16ae2b0fecbfe77a77c06494e589c5d.jpg"
+STATIC_QR_URL = "https://i.pinimg.com/736x/d1/a6/fb/d1a6fb612c18bd5c7f51fff40ff94c0b.jpg"
 
 # 🔴 Telegram Settings
 TELE_TOKEN = "8470641780:AAHd2LRndd0dA2lBBkSEzxqh5FtgYqHpNwY"
