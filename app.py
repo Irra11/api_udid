@@ -256,8 +256,9 @@ def api_send_email():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)}), 500
+        
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
-    import re # Add this at the top of your file with other imports
+  
