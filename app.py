@@ -245,7 +245,7 @@ def api_send_email():
 
     try:
         resend.Emails.send({
-            "from": "Irra Store <admin@irra.store>",
+            "from": "Irra Esign Store <admin@irraesign.store>",
             "to": [order['email']],
             "subject": subject_text,
             "html": html_body
