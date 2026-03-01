@@ -91,7 +91,7 @@ def create_payment():
                 "order_id": order_id,
                 "email": email,
                 "udid": udid, 
-                "price": "10.00",
+                "price": "15.00",
                 "plan": "Standard",
                 "status": "pending_manual_check",
                 "timestamp": get_khmer_time()
