@@ -174,7 +174,7 @@ def api_send_email():
     if not order: return jsonify({"success": False, "msg": "Order not found"}), 404
 
     # 2. Prepare Data
-    price = order.get('price', '10.00')
+    price = order.get('price', '15.00')
     plan = order.get('plan', 'Standard Package')
     udid = order.get('udid', 'N/A')
     user_name = order.get('email').split('@')[0]
