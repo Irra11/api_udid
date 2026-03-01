@@ -240,25 +240,30 @@ def api_send_email():
             </tr>
         </table>
     </body>
-    </html>
+  </html>
     """
 
-   try:
+    try:
         resend.Emails.send({
             "from": "Irra Esign Store <admin@irraesign.store>",
             "to": [order['email']],
             "subject": subject_text,
             "html": html_body
         })
+
         new_status = "failed" if is_failed else "completed"
-        orders_col.update_one({"order_id": oid}, {"$set": {"download_link": download_link, "status": new_status}})
+
+        orders_col.update_one(
+            {"order_id": oid},
+            {"$set": {
+                "download_link": download_link,
+                "status": new_status
+            }}
+        )
+
         send_telegram_alert(f"✅ <b>EMAIL SENT</b> to {order['email']}")
+
         return jsonify({"success": True})
+
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)}), 500
-        
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
-  
