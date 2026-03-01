@@ -32,7 +32,7 @@ TELE_TOKEN = "8470641780:AAHd2LRndd0dA2lBBkSEzxqh5FtgYqHpNwY"
 TELE_CHAT_ID = "5007619095"
 
 # 🔴 Resend Email Settings
-RESEND_API_KEY = "re_igigpwEr_2KkTAu1pqUJ1WpRrXXdtga7C"
+RESEND_API_KEY = "re_M8VwiPH6_CYEbbqfg6nG737BEqR9nNWD5"
 resend.api_key = RESEND_API_KEY
 SHOP_LOGO_URL = "https://i.pinimg.com/736x/da/83/78/da8378a6ddba21823631bd644bee4266.jpg"
 
@@ -244,13 +244,13 @@ def api_send_email():
     """
 
     try:
-        resend.Emails.send({
-            "from": "Irra Esign Store <admin@irraesign.store>",
-            "to": [order['email']],
-            "subject": subject_text,
-            "html": html_body
-        })
-        
+            r = resend.Emails.send({
+                "from": "Irra Store <admin@irra.store>",
+                "to": [recipient],
+                "subject": email_subject,
+                "html": html_body
+            })
+            
         new_status = "failed" if is_failed else "completed"
         orders_col.update_one({"order_id": oid}, {"$set": {"download_link": download_link, "status": new_status}})
         send_telegram_alert(f"✅ <b>EMAIL SENT</b> to {order['email']}")
