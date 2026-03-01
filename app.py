@@ -32,7 +32,7 @@ TELE_TOKEN = "8470641780:AAHd2LRndd0dA2lBBkSEzxqh5FtgYqHpNwY"
 TELE_CHAT_ID = "5007619095"
 
 # 🔴 Resend Email Settings
-RESEND_API_KEY = "re_M8VwiPH6_CYEbbqfg6nG737BEqR9nNWD5"
+RESEND_API_KEY = "re_igigpwEr_2KkTAu1pqUJ1WpRrXXdtga7C"
 resend.api_key = RESEND_API_KEY
 SHOP_LOGO_URL = "https://i.pinimg.com/736x/da/83/78/da8378a6ddba21823631bd644bee4266.jpg"
 
@@ -245,7 +245,7 @@ def api_send_email():
 
    try:
         resend.Emails.send({
-            "from": "Irra Store <admin@irra.store>",
+            "from": "Irra Esign Store <admin@irraesign.store>",
             "to": [order['email']],
             "subject": subject_text,
             "html": html_body
