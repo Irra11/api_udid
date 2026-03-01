@@ -70,26 +70,6 @@ def send_telegram_alert(message):
 def status():
     return jsonify({"status": "Backend Live (Production Mode)", "time": get_khmer_time()})
 
-
-@app.route('/api/enroll', methods=['POST'])
-def enroll():
-    """Receives data from iPhone Settings, extracts UDID, and redirects back to website"""
-    try:
-        # iPhone sends signed binary XML (PKCS7). We decode and use Regex to find the UDID.
-        raw_data = request.get_data().decode('latin-1')
-        udid_search = re.search(r'<key>UDID</key>\s*<string>(.*?)</string>', raw_data)
-        
-        if udid_search:
-            udid = udid_search.group(1)
-            print(f"🎯 Target UDID Found: {udid}")
-            # Redirect Safari back to our website with the UDID inside the URL (?udid=...)
-            return "", 301, {'Location': f"{FRONTEND_URL}?udid={udid}"}
-        
-        return "UDID Extraction Failed", 400
-    except Exception as e:
-        print(f"Enroll Error: {e}")
-        return str(e), 500
-
 # ==========================================
 # 4. PAYMENT & ORDER PROCESSING
 # ==========================================
